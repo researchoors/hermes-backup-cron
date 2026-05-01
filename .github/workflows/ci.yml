@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install shellcheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+
+      - name: ShellCheck
+        run: shellcheck -s bash backup.sh
+
+      - name: Check for embedded secrets
+        run: |
+          ! grep -rnE '(ghp_|gho_|sk-|AKIA|x-access-token|password\s*=\s*["\x27][^"$])' backup.sh
+
+      - name: Check bash syntax
+        run: bash -n backup.sh
+
+      - name: Verify script uses strict mode
+        run: grep -q 'set -euo pipefail' backup.sh
+
+  style:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install shfmt
+        run: |
+          SHFMT_VERSION=3.9.0
+          curl -sSL "https://github.com/mvdan/sh/releases/download/v${SHFMT_VERSION}/shfmt_v${SHFMT_VERSION}_linux_amd64" -o /usr/local/bin/shfmt
+          chmod +x /usr/local/bin/shfmt
+
+      - name: Check formatting
+        run: shfmt -d -i 4 -ci backup.sh
