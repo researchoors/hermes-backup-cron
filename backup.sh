@@ -5,10 +5,10 @@
 # Compresses state.db with gzip to stay under GitHub's 100MB file limit.
 set -euo pipefail
 
-readonly HERMES_HOME="${HERMES_HOME:-$HOME/.hermes}"
-readonly STATE_DB="$HERMES_HOME/state.db"
-readonly REPO_URL="https://x-access-token:$(gh auth token)@github.com/researchoors/hermes-backup.git"
-readonly TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+HERMES_HOME="${HERMES_HOME:-$HOME/.hermes}"
+STATE_DB="$HERMES_HOME/state.db"
+REPO_URL="https://x-access-token:$(gh auth token)@github.com/researchoors/hermes-backup.git"
+TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
 BACKUP_DIR=""
 REPO_DIR=""
@@ -25,6 +25,7 @@ mkdir -p "$BACKUP_DIR/memories" "$BACKUP_DIR/skills"
 
 # ── Memories (verbatim) ──
 if [[ -d "$HERMES_HOME/memories" ]]; then
+    # shellcheck disable=SC2035
     cp "$HERMES_HOME/memories/"*.md "$BACKUP_DIR/memories/" 2>/dev/null || true
 fi
 
@@ -44,7 +45,7 @@ cp "$HERMES_HOME/persona.md" "$BACKUP_DIR/" 2>/dev/null || true
 cp "$HERMES_HOME/SOUL.md" "$BACKUP_DIR/" 2>/dev/null || true
 cp "$HERMES_HOME/config.yaml" "$BACKUP_DIR/" 2>/dev/null || true
 
-echo "$TIMESTAMP" > "$BACKUP_DIR/.last-backup"
+echo "$TIMESTAMP" >"$BACKUP_DIR/.last-backup"
 
 # ── Clone and sync ──
 if ! git clone --depth 1 "$REPO_URL" "$REPO_DIR" 2>/dev/null; then
@@ -67,7 +68,7 @@ git add -A
 if git diff --cached --quiet; then
     echo "No changes to commit"
 else
-    git -c user.name="Hermes Agent" -c user.email="hermes@backup" commit -m "backup: $TIMESTAMP"
+    git -c user.name="hankbobtheresearchoor" -c user.email="hankbobtheresearchoor@gmail.com" commit -m "backup: $TIMESTAMP"
     git push origin HEAD:main 2>/dev/null || (git branch -M main && git push -u origin main)
 fi
 
