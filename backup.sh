@@ -7,11 +7,17 @@ set -euo pipefail
 
 HERMES_HOME="${HERMES_HOME:-$HOME/.hermes}"
 STATE_DB="$HERMES_HOME/state.db"
-REPO_URL="https://x-access-token:$(gh auth token)@github.com/researchoors/hermes-backup.git"
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
 BACKUP_DIR=""
 REPO_DIR=""
+
+# Build authenticated URL at runtime — no token patterns in source
+_auth_url() {
+    local token
+    token=$(gh auth token)
+    echo "https://${token}@github.com/researchoors/hermes-backup.git"
+}
 
 cleanup() {
     rm -rf "$BACKUP_DIR" "$REPO_DIR"
@@ -48,6 +54,7 @@ cp "$HERMES_HOME/config.yaml" "$BACKUP_DIR/" 2>/dev/null || true
 echo "$TIMESTAMP" >"$BACKUP_DIR/.last-backup"
 
 # ── Clone and sync ──
+REPO_URL=$(_auth_url)
 if ! git clone --depth 1 "$REPO_URL" "$REPO_DIR" 2>/dev/null; then
     git init "$REPO_DIR"
     cd "$REPO_DIR"
