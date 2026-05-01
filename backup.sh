@@ -2,6 +2,7 @@
 # Hermes Backup Cron
 # Pushes verbatim copy of all Hermes agent data to the private hermes-backup repo.
 # No secrets embedded — reads GitHub token via `gh auth token` at runtime.
+# Compresses state.db with gzip to stay under GitHub's 100MB file limit.
 set -euo pipefail
 
 readonly HERMES_HOME="${HERMES_HOME:-$HOME/.hermes}"
@@ -20,7 +21,7 @@ trap cleanup EXIT
 # ── Prepare staging directory ──
 BACKUP_DIR=$(mktemp -d "${TMPDIR:-/tmp}/hermes-backup.XXXXXX")
 REPO_DIR=$(mktemp -d "${TMPDIR:-/tmp}/hermes-backup-repo.XXXXXX")
-mkdir -p "$BACKUP_DIR/memories" "$BACKUP_DIR/skills" "$BACKUP_DIR/sessions"
+mkdir -p "$BACKUP_DIR/memories" "$BACKUP_DIR/skills"
 
 # ── Memories (verbatim) ──
 if [[ -d "$HERMES_HOME/memories" ]]; then
@@ -32,28 +33,10 @@ if [[ -d "$HERMES_HOME/skills" ]]; then
     cp -R "$HERMES_HOME/skills/"* "$BACKUP_DIR/skills/" 2>/dev/null || true
 fi
 
-# ── Session states (export from state.db) ──
+# ── State DB (consistent snapshot via sqlite3 backup API, then gzip) ──
 if [[ -f "$STATE_DB" ]]; then
-    sqlite3 "$STATE_DB" "
-        SELECT json_group_array(json_object(
-            'id', id, 'source', source, 'model', model,
-            'started_at', started_at, 'ended_at', ended_at,
-            'message_count', message_count, 'tool_call_count', tool_call_count,
-            'input_tokens', input_tokens, 'output_tokens', output_tokens,
-            'title', title, 'estimated_cost_usd', estimated_cost_usd
-        )) FROM sessions;" > "$BACKUP_DIR/sessions/index.json" 2>/dev/null || true
-
-    while IFS= read -r sid; do
-        [[ -z "$sid" ]] && continue
-        local safe_name
-        safe_name=$(echo "$sid" | tr '/' '_')
-        sqlite3 "$STATE_DB" "
-            SELECT json_group_array(json_object(
-                'role', role, 'content', content,
-                'tool_name', tool_name, 'timestamp', timestamp,
-                'token_count', token_count
-            )) FROM messages WHERE session_id='${sid}';" > "$BACKUP_DIR/sessions/${safe_name}.json" 2>/dev/null || true
-    done < <(sqlite3 "$STATE_DB" "SELECT id FROM sessions ORDER BY started_at DESC;")
+    sqlite3 "$STATE_DB" ".backup '$BACKUP_DIR/state.db'" 2>/dev/null || cp "$STATE_DB" "$BACKUP_DIR/state.db"
+    gzip -9 "$BACKUP_DIR/state.db"
 fi
 
 # ── Persona, SOUL, Config ──
@@ -71,7 +54,12 @@ if ! git clone --depth 1 "$REPO_URL" "$REPO_DIR" 2>/dev/null; then
 fi
 
 cd "$REPO_DIR"
-rm -rf memories skills sessions persona.md SOUL.md config.yaml .last-backup
+
+# ── Remove old LFS config if present ──
+rm -f .gitattributes
+
+# ── Sync files ──
+rm -rf memories skills state.db state.db.gz persona.md SOUL.md config.yaml .last-backup sessions
 cp -R "$BACKUP_DIR/"* .
 
 # ── Commit and push ──
